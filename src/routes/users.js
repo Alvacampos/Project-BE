@@ -5,6 +5,7 @@ const Users = require('../models/users.js');
 const requireAuth = require('../middlewares/requireAuth');
 const sanitize = require('mongo-sanitize');
 const { UserClass, KeyGen } = require('../classes/classes.js');
+const bcrypt = require('bcrypt')
 
 const CIPHER_ALGORITHM = process.env.CYPHER_KEY;
 const kg = new KeyGen(CIPHER_ALGORITHM);
@@ -17,7 +18,7 @@ const returnDataStructure = (data, token = undefined) => {
     data.vehicleType,
     data.vehiclePlate
   );
-  
+
   return token
     ? {
         token,
@@ -39,7 +40,7 @@ const returnDataStructure = (data, token = undefined) => {
 // Welcome endpoint
 router.get('/', (req, res) => {
   res.status(200).send('Hi! This is the AppArCar API');
-});  
+});
 
 // Gets ALL the users in the DB
 router.get('/users', requireAuth, async (req, res) => {
@@ -93,7 +94,7 @@ router.post('/signup', async (req, res) => {
     vehiclePlate: cleanVehiclePlate,
   });
 
-  try {    
+  try {
     await user.save()
     const token = jwt.sign({userId: user._id}, process.env.JWT_KEY)
     return res.status(201).send(returnDataStructure(user, token));
@@ -105,7 +106,7 @@ router.post('/signup', async (req, res) => {
 // Gets profile data for user
 router.post('/profile',requireAuth, async (req, res) => {
   const email = req.body.email;
-  
+
   try {
     let user = await Users.findOne({ email }).lean();
     if (user.card) {
@@ -121,6 +122,7 @@ router.post('/profile',requireAuth, async (req, res) => {
   }
 });
 
+
 //Update User
 router.patch('/update_users', requireAuth, async (req, res) => {
   const { email, newEmail, name, surname, password } = req.body;
@@ -130,21 +132,26 @@ router.patch('/update_users', requireAuth, async (req, res) => {
   const cleanSurname = sanitize(surname);
   const cleanPassword = sanitize(password);
   try {
-    const response = await Users.updateOne(
-      { email: cleanEmail },
-      {
-        email: cleanNewEmail,
-        name: cleanName,
-        surname: cleanSurname,
-        password: cleanPassword,
-      },
-    );
-    if (response.nModified != 0) {
-      return res.status(200).send({ report: 'Changes Saved' });
-    }
-    return res
-      .status(400)
-      .send({ report: 'There was an error, no changes saved' });
+    bcrypt.genSalt(10, (err, salt) => {
+      bcrypt.hash(cleanPassword, salt, async (err, hash) => {
+
+        const response = await Users.updateOne(
+          { email: cleanEmail },
+          {
+            email: cleanNewEmail,
+            name: cleanName,
+            surname: cleanSurname,
+            password: hash,
+          },
+        );
+        if (response.nModified != 0) {
+          return res.status(200).send({ report: 'Changes Saved' });
+        }
+        return res
+          .status(400)
+          .send({ report: 'There was an error, no changes saved' });
+     });
+    });
   } catch (err) {
     return res.status(400).send(err);
   }
@@ -178,7 +185,7 @@ router.patch('/vehicle', requireAuth, async (req, res) => {
 });
 
 //Add credit card to user
-router.patch('/card_registration', requireAuth, async (req, res) => {  
+router.patch('/card_registration', requireAuth, async (req, res) => {
   const { email, cardInfo } = req.body;
 
   const cleanEmail = sanitize(email);
@@ -186,8 +193,8 @@ router.patch('/card_registration', requireAuth, async (req, res) => {
   const cleanName = sanitize(cardInfo.name);
   const cleanExpiry = sanitize(cardInfo.expiry);
   const cleanCvc = sanitize(cardInfo.cvc);
-  const cleanBrand = sanitize(cardInfo.brand);  
-  
+  const cleanBrand = sanitize(cardInfo.brand);
+
   try {
     const response = await Users.updateOne(
       { email: cleanEmail },
